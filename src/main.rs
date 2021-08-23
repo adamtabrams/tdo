@@ -134,9 +134,6 @@ fn user_view(tasks: &mut Tasks) -> Result<(), Error> {
 
 // consider setting status
 fn user_add(tasks: &mut Tasks, path: &Path) -> Result<(), Error> {
-    // println!("Ctrl-C to cancel additions");
-    // println!("Empty line to save and quit");
-
     let mut is_modified = false;
 
     while let Some(new_task) = Task::from_user(tasks.len()) {
@@ -152,19 +149,19 @@ fn user_add(tasks: &mut Tasks, path: &Path) -> Result<(), Error> {
 }
 
 fn user_remove(tasks: &mut Tasks, path: &Path) -> Result<(), Error> {
-    while tasks.select(Tasks::delete_task) {}
+    while tasks.select("remove > ", Tasks::delete_task) {}
     write_file(path, tasks.to_file())?;
     Ok(())
 }
 
 fn user_set(tasks: &mut Tasks, path: &Path) -> Result<(), Error> {
-    while tasks.select(Tasks::set_status) {}
+    while tasks.select("set > ", Tasks::set_status) {}
     write_file(path, tasks.to_file())?;
     Ok(())
 }
 
 fn user_modify(tasks: &mut Tasks, path: &Path) -> Result<(), Error> {
-    while tasks.select(Tasks::set_text) {}
+    while tasks.select("modify > ", Tasks::set_text) {}
     write_file(path, tasks.to_file())?;
     Ok(())
 }
@@ -246,11 +243,8 @@ enum Status {
     Other,
 }
 
-// type UserFn = Box<dyn Fn(&mut Tasks, &Path, &ArgMatches) -> Result<(), Error>>;
-
 struct UserCommand {
     name: String,
-    // func: UserFn,
     func: Box<dyn Fn(&mut Tasks, &Path, &ArgMatches) -> Result<(), Error>>,
 }
 
@@ -307,13 +301,14 @@ impl Tasks {
         self.iter_mut().find(|t| t.id == id)
     }
 
-    fn select(&mut self, f: fn(&mut Self, usize)) -> bool {
+    fn select(&mut self, prompt: &str, f: fn(&mut Self, usize)) -> bool {
         let buf = Cursor::new(self.to_string());
         let reader_option = SkimItemReaderOption::default().ansi(true).build();
         let skim_reader = SkimItemReader::new(reader_option).of_bufread(buf);
         let skim_config = SkimOptionsBuilder::default()
             .height(Some("50%"))
             .reverse(true)
+            .prompt(Some(prompt))
             .build()
             .unwrap();
 
@@ -567,7 +562,7 @@ impl Task {
         let skim_config = SkimOptionsBuilder::default()
             .height(Some("50%"))
             .reverse(true)
-            .prompt(Some("task text: "))
+            .prompt(Some("new task text: "))
             .color(Some("info:8,bg:8"))
             .build()
             .unwrap();
