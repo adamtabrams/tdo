@@ -31,6 +31,12 @@ fn main() -> Result<(), Error> {
                 .hide_env_values(true),
         )
         .arg(Arg::with_name("editor_env").env("EDITOR").hidden(true))
+        .arg(
+            Arg::with_name("init")
+                .long("--init")
+                .short("-i")
+                .help("Create a todo file in the current directory"),
+        )
         .subcommand(
             SubCommand::with_name("view")
                 .visible_alias("v")
@@ -62,10 +68,15 @@ fn main() -> Result<(), Error> {
                 .about(format!("{:<30}", "Open tasks with EDITOR").as_str()),
         )
         .subcommand(SubCommand::with_name("sort").about("Sort tasks by status"))
-        // .subcommand(SubCommand::with_name("clean").about("Delete completed tasks"))
+        .subcommand(SubCommand::with_name("clean").about("Delete completed tasks"))
         .get_matches();
 
     // execute options
+    if matches.is_present("init") {
+        return user_init();
+    }
+
+    // TODO implement init if none exists
 
     // set path
     let path = get_path(&matches)?;
@@ -104,6 +115,10 @@ fn main() -> Result<(), Error> {
             name: "sort".to_string(),
             func: Box::new(|t, p, _| user_sort(t, p)),
         },
+        UserCommand {
+            name: "clean".to_string(),
+            func: Box::new(|t, p, _| user_clean(t, p)),
+        },
     ];
 
     for c in &user_commands {
@@ -112,17 +127,23 @@ fn main() -> Result<(), Error> {
         }
     }
 
-    // TODO implement clean
-    // if matches.subcommand_matches("clean").is_some() {
-    //     tasks.sort();
-    //     write_file(path, tasks.to_file())?;
-    //     return Ok(());
-    // }
-
-    // TODO implement interactive
-    // TODO implement init if none exists
     while tasks.interactive(&path, &matches, &user_commands)? {}
 
+    Ok(())
+}
+
+fn user_init() -> Result<(), Error> {
+    // increase scope?
+    const LOCAL_PATH: &str = ".todo.md";
+
+    if Path::new(LOCAL_PATH).is_file() {
+        return Err(Error::new(
+            ErrorKind::AlreadyExists,
+            format!("todo file already exists in current directory: {}", LOCAL_PATH),
+        ));
+    }
+
+    File::create(LOCAL_PATH)?;
     Ok(())
 }
 
@@ -132,7 +153,6 @@ fn user_view(tasks: &mut Tasks) -> Result<(), Error> {
     Ok(())
 }
 
-// consider setting status
 fn user_add(tasks: &mut Tasks, path: &Path) -> Result<(), Error> {
     let mut is_modified = false;
 
@@ -182,10 +202,19 @@ fn user_sort(tasks: &mut Tasks, path: &Path) -> Result<(), Error> {
     Ok(())
 }
 
+fn user_clean(tasks: &mut Tasks, path: &Path) -> Result<(), Error> {
+    let tasks_text = tasks
+        .iter()
+        .filter(|t| t.status != Status::Done)
+        .map(|t| t.to_file())
+        .collect();
+    write_file(path, tasks_text)?;
+    Ok(())
+}
+
 fn read_file(path: &Path) -> Result<Vec<String>, Error> {
-    let mut file = File::open(path)?;
     let mut buf = String::new();
-    file.read_to_string(&mut buf)?;
+    File::open(path)?.read_to_string(&mut buf)?;
     Ok(buf.lines().map(|l| l.to_string()).collect())
 }
 
@@ -198,6 +227,7 @@ fn write_file(path: &Path, text: String) -> Result<(), Error> {
 }
 
 fn get_path(matches: &ArgMatches) -> Result<PathBuf, Error> {
+    // increase scope?
     const LOCAL_PATH: &str = ".todo.md";
     let mut full_path = env::current_dir()?;
 
@@ -428,10 +458,7 @@ impl Tasks {
     }
 
     fn to_file(&self) -> String {
-        self.iter()
-            .map(|t| t.to_file())
-            .collect::<Vec<_>>()
-            .join("\n")
+        self.iter().map(|t| t.to_file()).collect()
     }
 
     fn interactive(
@@ -486,15 +513,19 @@ impl Display for Tasks {
 
 impl FromIterator<Task> for Tasks {
     fn from_iter<I: IntoIterator<Item = Task>>(iter: I) -> Self {
-        let mut t = Tasks(Vec::new());
-
-        for i in iter {
-            t.0.push(i);
-        }
-
-        t
+        let mut tasks = Tasks(Vec::new());
+        iter.into_iter().for_each(|t| tasks.0.push(t));
+        tasks
     }
 }
+
+// impl FromIterator<&Task> for Tasks {
+//     fn from_iter<I: IntoIterator<Item = Task>>(iter: I) -> Self {
+//         let mut tasks = Tasks(Vec::new());
+//         iter.into_iter().for_each(|t| tasks.0.push(*t));
+//         tasks
+//     }
+// }
 
 impl Task {
     fn parse(id: usize, line: &str) -> Self {
@@ -542,17 +573,17 @@ impl Task {
                 status: Status::Todo,
                 text,
                 ..
-            } => format!("- [ ] {}", text),
+            } => format!("- [ ] {}\n", text),
             Task {
                 status: Status::Done,
                 text,
                 ..
-            } => format!("- [x] {}", text),
+            } => format!("- [x] {}\n", text),
             Task {
                 status: Status::Other,
                 text,
                 ..
-            } => format!("- {}", text),
+            } => format!("- {}\n", text),
         }
     }
 
